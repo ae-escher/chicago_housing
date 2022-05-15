@@ -1,0 +1,40 @@
+---
+title: "Chicago Housing"
+author: "Annelise Escher"
+date: "5/29/2022"
+output:
+  pdf_document: default
+  html_document:
+    number_sections: yes
+---
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(stargazer)
+library(readxl)
+library(knitr)
+library(lubridate)
+library(dplyr)
+```
+
+Reading in data
+```{r}
+# WBEZ data portal 
+chicago_purchases <- read_excel("Chicago Purchase Orginations 2012-18_Public File.xlsx", 
+                                sheet = "Data", 
+                                col_types = "text") 
+# NRS
+redlining_score <- read_excel("Historic Redlining Score 2010B.xlsx")
+# City of Chicago data hub
+```
+
+```{r}
+chicago_purchases <-
+    select(chicago_purchases, -c('Denial Reason 3', 'Denial Reason 2', 'Denial Reason 1', 'Co Applicant Race 5', 'Co Applicant Race 4', 'Co Applicant Race 3', 'Co Applicant Race 2', 'Applicant Race 5', 'Applicant Race 4', 'Applicant Race 3', 'Applicant Race 2', 'Parent Name (Panel)', 'Top Holder Name')) %>% # Removing unnecessary columns to ease readability
+  mutate(GEOID10 = `Census Tract`) # changing column names for join 
+```
+
+```{r}
+chicago_purchases <- chicago_purchases %>%
+  left_join(redlining_score, by = "GEOID10")
+```
+
