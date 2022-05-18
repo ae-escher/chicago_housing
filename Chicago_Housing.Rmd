@@ -14,6 +14,7 @@ library(readxl)
 library(knitr)
 library(lubridate)
 library(dplyr)
+library(devtools)
 ```
 
 Reading in data
@@ -36,5 +37,30 @@ chicago_purchases <-
 ```{r}
 chicago_purchases <- chicago_purchases %>%
   left_join(redlining_score, by = "GEOID10")
+```
+
+```{r}
+zip_stats <- clean_zips %>%
+mutate(unpaid = as.numeric(total_payments == 0)) %>%
+group_by(clean_zip) %>%
+summarise(unpaid_count = sum(unpaid),
+residents = mean(population),
+share_black = mean(share_black)) %>%
+mutate(unpaid_per_1000_residents = 1000 * unpaid_count / residents) %>%
+arrange(desc(unpaid_per_1000_residents))
+head(zip_stats, 3)
+
+#One way using choroplethrZip package
+#to install library ChroplethrZip, you need to load library(devtools) and in
+#your console type install_github('arilamstein/choroplethrZip@v1.5.0')
+to_map <- zip_stats %>%
+mutate(regions = as.character(clean_zip)) %>%
+select(regions, unpaid_per_1000_residents)
+colnames(to_map) <- c("region", "value")
+choroplethrZip::zip_choropleth(to_map,
+zip_zoom = to_map$region,
+title = "Chicago Unpaid Tickets",
+legend = "Unpaid Tickets per 1000 Residents"
+)
 ```
 
