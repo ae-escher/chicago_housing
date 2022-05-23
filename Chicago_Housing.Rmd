@@ -6,6 +6,7 @@ output:
   pdf_document: default
   html_document:
     number_sections: yes
+    keep_md: yes
 ---
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -15,6 +16,9 @@ library(knitr)
 library(lubridate)
 library(dplyr)
 library(devtools)
+library(sf)
+library(janitor)
+library(MASS)
 ```
 
 Reading in data
@@ -25,42 +29,231 @@ chicago_purchases <- read_excel("Chicago Purchase Orginations 2012-18_Public Fil
                                 col_types = "text") 
 # NRS
 redlining_score <- read_excel("Historic Redlining Score 2010B.xlsx")
-# City of Chicago data hub
 ```
-
+```{r}
+chi_redlining_score <- redlining_score %>% filter(METRO_NAME == "Chicago-Naperville-Elgin, IL-I") 
+```
+Cleaning main dataset
 ```{r}
 chicago_purchases <-
     select(chicago_purchases, -c('Denial Reason 3', 'Denial Reason 2', 'Denial Reason 1', 'Co Applicant Race 5', 'Co Applicant Race 4', 'Co Applicant Race 3', 'Co Applicant Race 2', 'Applicant Race 5', 'Applicant Race 4', 'Applicant Race 3', 'Applicant Race 2', 'Parent Name (Panel)', 'Top Holder Name')) %>% # Removing unnecessary columns to ease readability
   mutate(GEOID10 = `Census Tract`) # changing column names for join 
 ```
 
+Adding redlining data
 ```{r}
 chicago_purchases <- chicago_purchases %>%
   left_join(redlining_score, by = "GEOID10")
 ```
 
+Adding zip codes
 ```{r}
-zip_stats <- clean_zips %>%
-mutate(unpaid = as.numeric(total_payments == 0)) %>%
-group_by(clean_zip) %>%
-summarise(unpaid_count = sum(unpaid),
-residents = mean(population),
-share_black = mean(share_black)) %>%
-mutate(unpaid_per_1000_residents = 1000 * unpaid_count / residents) %>%
-arrange(desc(unpaid_per_1000_residents))
-head(zip_stats, 3)
+census_to_zip <- read_excel("ZIP_TRACT_122018.xlsx") %>%
+  mutate(GEOID10 = tract) 
+chicago_purchases_for_zip <- chicago_purchases %>%
+  left_join(census_to_zip, by = "GEOID10") %>%
+  mutate(zip = as.character(zip)) 
+```
 
-#One way using choroplethrZip package
-#to install library ChroplethrZip, you need to load library(devtools) and in
-#your console type install_github('arilamstein/choroplethrZip@v1.5.0')
-to_map <- zip_stats %>%
-mutate(regions = as.character(clean_zip)) %>%
-select(regions, unpaid_per_1000_residents)
-colnames(to_map) <- c("region", "value")
-choroplethrZip::zip_choropleth(to_map,
-zip_zoom = to_map$region,
-title = "Chicago Unpaid Tickets",
-legend = "Unpaid Tickets per 1000 Residents"
+```{r}
+zip_stats <- chicago_purchases_for_zip %>%
+  mutate(loan_amount = as.numeric(`Loan Amount`)) %>%
+  group_by(zip) %>%
+  summarise(value = sum(loan_amount)) %>%
+  mutate(zip = as.character(zip)) %>%
+  arrange(desc(value))
+colnames(zip_stats) <- c("region", "value")
+zip_stats <- zip_stats %>% mutate(region = str_trim(region))
+head(zip_stats, 3)
+```
+
+```{r}
+zip_stats1 <- zip_stats %>%
+  mutate(region = as.character(region)) %>%
+  filter(region < 60666)
+
+jpeg(file="zip_code.jpeg")
+choroplethrZip::zip_choropleth(zip_stats1,
+                               zip_zoom = zip_stats1$region,
+                               title = "Home Mortgage Loans, 2012-2018",
+                               legend = "Dollar Amounts"
+)
+dev.off()
+```
+
+```{r}
+zip_stats %>%
+ # tail(40) %>%
+  arrange(desc(value)) %>%
+  ggplot(aes(x = reorder(region, value), y = value)) + 
+  geom_bar(stat = 'identity') + 
+  scale_y_continuous(breaks = seq(0, 300000000, by = 60000000), labels = scales::comma) + 
+  coord_flip() 
+```
+
+
+```{r}
+chicago_purchases <- clean_names(chicago_purchases)
+
+census_stats <- chicago_purchases %>%
+  mutate(loan_amount = as.numeric(loan_amount)) %>%
+  group_by(census_tract) %>%
+      #     'Tract Majority Racial/Ethnic Group', 'Tract Population', 'Tract Median Family Income') %>%
+  summarise(value = sum(loan_amount)) %>%
+  arrange(desc(value)) 
+
+tract_demography <- chicago_purchases %>%
+  mutate(year = as.numeric(str_trim(loan_year))) %>%
+  filter(year == 2017 ) %>% 
+  select(geoid10, tract_majority_racial_ethnic_group, tract_population, tract_median_family_income) %>%
+  mutate(value = geoid10, 
+         tract_population = as.numeric(tract_population), 
+         tract_median_family_income = as.numeric(tract_median_family_income)) %>%
+  distinct()
+summary(tract_demography)
+```
+
+```{r}
+colnames(census_stats) <- c("GEOID10", "values")
+
+census_stats %>%
+  head(60) %>%
+  arrange(desc(value)) %>%
+  ggplot(aes(x = reorder(region, value), y = value)) + 
+  geom_bar(stat = 'identity') + 
+  scale_y_continuous(breaks = seq(0, 300000000, by = 60000000), labels = scales::comma) + 
+  coord_flip() 
+```
+
+```{r}
+# number to majority black neighborhoods 
+census_stats <- census_stats %>%
+  left_join(tract_demography, by="value") 
+```
+
+```{r}
+head(census_stats)
+```
+
+
+```{r}
+census_stats %>%
+  group_by(tract_majority_racial_ethnic_group) %>%
+  summarize(sum = sum(value)) %>%
+  arrange(desc(sum))
+```
+
+```{r}
+table(for_regression$INTERVAL2010)
+table(for_regression$INTERVAL2010)/nrow(for_regression)
+```
+
+
+
+
+```{r}
+quantile(census_stats$values, probs = 0.9945, na.rm = TRUE)
+quantile(census_stats$values, probs = 0.9056, na.rm = TRUE)
+quantile(census_stats$values, probs = 0.39084, na.rm = TRUE)
+census_stats <- census_stats %>%
+  mutate(ranking_2010 = ifelse(values >= 494773563, 1,
+                    ifelse(values >= 192770992, 2, 
+                    ifelse(values >= 21788852, 3, 4))))
+table(for_regression$ranking_2010)
+```
+```{r}
+census_stats <- census_stats %>% mutate(GEOID10 = as.character(GEOID10))
+```
+
+```{r}
+nrow(census_stats)
+for_regression <- census_stats %>%
+  left_join(chi_redlining_score, by = "GEOID10") %>%
+  filter(!is.na(INTERVAL2010)) %>%
+  filter(!is.na(quartile)) %>%
+ # mutate(new_column = ifelse(INTERVAL2010 >=3, 1, 0)) %>%
+  mutate(value_2 = ifelse(INTERVAL2010 == 2, 1, 0)) %>%
+  mutate(value_3 = ifelse(INTERVAL2010 == 3, 1, 0)) %>%
+  mutate(value_4 = ifelse(INTERVAL2010 == 4, 1, 0))
+nrow(for_regression)
+```
+
+```{r}
+regression3 <- lm(ranking_2010 ~  value_2 + value_3 + value_4, data=for_regression)
+summary(regression3)
+```
+
+
+```{r}
+ftable(xtabs(~ INTERVAL2010 + ranking_2010, data = for_regression))
+```
+
+```{r}
+for_regression %>%
+  ggplot(aes(x = ranking_2010, y = HRS2010)) + 
+  geom_point()
+```
+
+
+```{r}
+regression1 <- lm(ranking_2010 ~ INTERVAL2010, data=for_regression)
+summary(regression1)
+```
+```{r}
+regression2 <- polr(as.factor(ranking_2010) ~ INTERVAL2010, data = for_regression, Hess = TRUE)
+summary(regression2)
+```
+https://stats.oarc.ucla.edu/r/dae/ordinal-logistic-regression/
+
+
+
+census_stats <- census_stats %>%
+  mutate(region = as.double(region))
+
+```{r}
+neighborhood <- c("Near North Side", "Lake View", "Lincoln Park", "West Town", "All majority-Black neighborhoods")
+values <- c(6206203, 6016469, 5258690, 5203987, 4643593)
+chart_data <- tibble(neighborhood, values)
+
+#jpeg(file="majority.jpeg")
+chart_data %>%
+  arrange(desc(values)) %>%
+  ggplot(aes(x = reorder(neighborhood, values), y = values)) +
+  geom_bar(stat = 'identity') + coord_flip()
+#dev.off()
+```
+
+
+
+
+https://rdrr.io/cran/choroplethr/man/tract_choropleth.html 
+
+```{r}
+tract_choropleth(
+  census_stats,
+  state_name = "illinois",
+  title = "help",
+  legend = "no",
+  num_colors = 7
+  ,county_zoom = 17031
+  #,tract_zoom = census_stats$region
 )
 ```
 
+```{r}
+nrow(chi_redlining_score)
+chi_red_zip <- chi_redlining_score %>%
+  left_join(census_to_zip, by = "GEOID10")
+nrow(chi_red_zip)
+```
+
+
+```{r}
+zip_stats <- zip_stats %>%
+  filter(region != 60667, region != 60697, region != 60698 )
+```
+
+```{r}
+chicago_zips <- data.frame(list = c(60601, 60602, 60603, 60606, 60604, 60607, 60608, 60609, 60610, 60611, 60612, 60613, 60666, 60616, 60605, 60617, 60618, 60614, 60615, 60623, 60624, 60625, 60626, 60619, 60620, 60639, 60629, 60630, 60632, 60621, 60637, 60622, 60631, 60633, 60636, 60638, 60640, 60641, 60645, 60642, 60643, 60644, 60628, 60646, 60827, 60634, 60659, 60655, 60661, 60656, 60651, 60660, 60707, 60652, 60647, 60654, 60653, 60649, 60657))
+```
+Source: https://data.cityofchicago.org/browse?limitTo=datasets&q=zip+codes&sortBy=relevance
