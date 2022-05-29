@@ -9,6 +9,7 @@ output:
     keep_md: yes
 ---
 ```{r message=FALSE, warning=FALSE}
+rm(list = ls())
 library(tidyverse)
 library(stargazer)
 library(readxl)
@@ -19,7 +20,10 @@ library(devtools)
 library(sf)
 library(janitor)
 library(MASS)
+knitr::opts_chunk$set(echo = FALSE)
 ```
+
+## Reading in, cleaning, and combining data 
 
 Reading in data
 ```{r}
@@ -29,52 +33,63 @@ chicago_purchases <- read_excel("Chicago Purchase Orginations 2012-18_Public Fil
                                 col_types = "text") 
 # NRS
 redlining_score <- read_excel("Historic Redlining Score 2010B.xlsx")
+# Converting Census tracts to zipcodes for visualizations
+census_to_zip <- read_excel("ZIP_TRACT_122018.xlsx") %>% mutate(GEOID10 = tract) 
 ```
+
+Cleaning main datasets
 ```{r}
 chi_redlining_score <- redlining_score %>% filter(METRO_NAME == "Chicago-Naperville-Elgin, IL-I") 
-```
-Cleaning main dataset
-```{r}
-chicago_purchases <-
-    select(chicago_purchases, -c('Denial Reason 3', 'Denial Reason 2', 'Denial Reason 1', 'Co Applicant Race 5', 'Co Applicant Race 4', 'Co Applicant Race 3', 'Co Applicant Race 2', 'Applicant Race 5', 'Applicant Race 4', 'Applicant Race 3', 'Applicant Race 2', 'Parent Name (Panel)', 'Top Holder Name')) %>% # Removing unnecessary columns to ease readability
-  mutate(GEOID10 = `Census Tract`) # changing column names for join 
+
+chicago_purchases <- chicago_purchases %>% 
+  clean_names() %>%
+  mutate(GEOID10 = census_tract) %>%
+    dplyr::select(-contains('denial'),
+                  -contains('applicant'), 
+                  -parent_name_panel, -top_holder_name)
 ```
 
-Adding redlining data
+Adding redlining data and zipcodes
 ```{r}
 chicago_purchases <- chicago_purchases %>%
-  left_join(redlining_score, by = "GEOID10")
-```
-
-Adding zip codes
-```{r}
-census_to_zip <- read_excel("ZIP_TRACT_122018.xlsx") %>%
-  mutate(GEOID10 = tract) 
-chicago_purchases_for_zip <- chicago_purchases %>%
+  left_join(redlining_score, by = "GEOID10") 
+chic_purchases_w_zip <- chicago_purchases %>%
   left_join(census_to_zip, by = "GEOID10") %>%
   mutate(zip = as.character(zip)) 
 ```
 
+## Data visualizations 
+
+Creating dataframe for visualization by zip code
 ```{r}
-zip_stats <- chicago_purchases_for_zip %>%
-  mutate(loan_amount = as.numeric(`Loan Amount`)) %>%
+zip_stats <- chic_purchases_w_zip %>%
+  mutate(loan_amount = as.numeric(loan_amount)) %>%
   group_by(zip) %>%
-  summarise(value = sum(loan_amount)) %>%
-  mutate(zip = as.character(zip)) %>%
-  arrange(desc(value))
-colnames(zip_stats) <- c("region", "value")
-zip_stats <- zip_stats %>% mutate(region = str_trim(region))
+  summarise(loan_total = sum(loan_amount), 
+            white_percent_avg = mean(as.numeric(tract_percent_population_white)), 
+            black_percent_avg = mean(as.numeric(tract_percent_population_black)), 
+            latino_percent_avg = mean(as.numeric(tract_percent_population_latino)), 
+            asian_percent_avg = mean(as.numeric(tract_percent_population_asian))) %>%
+  mutate(zip = as.character(zip), 
+         majority_race = ifelse(white_percent_avg >= 0.5, "white", 
+                         ifelse(black_percent_avg >= 0.5, "black", 
+                         ifelse(latino_percent_avg >= 0.5, "latino", "no_majority")))) %>%
+  arrange(desc(loan_total))
 head(zip_stats, 3)
 ```
 
+Recreating WBEZ figure. Map of Chicago zip codes color coded by the dollar amount of mortgage loans made to that area from 2012-2018. 
 ```{r}
-zip_stats1 <- zip_stats %>%
-  mutate(region = as.character(region)) %>%
+zip_stats_for_map <- zip_stats %>%
+  dplyr::select(zip, loan_total) %>%
+  rename(region = zip, value = loan_total) %>%
+  transform(region = as.numeric(region)) %>%
+  mutate(region = str_trim(region)) %>%
   filter(region < 60666)
 
 jpeg(file="zip_code.jpeg")
-choroplethrZip::zip_choropleth(zip_stats1,
-                               zip_zoom = zip_stats1$region,
+choroplethrZip::zip_choropleth(zip_stats_for_map,
+                               zip_zoom = zip_stats_for_map$region,
                                title = "Home Mortgage Loans, 2012-2018",
                                legend = "Dollar Amounts"
 )
@@ -82,178 +97,158 @@ dev.off()
 ```
 
 ```{r}
+jpeg(file="zip_code_by_race.jpeg")
 zip_stats %>%
  # tail(40) %>%
-  arrange(desc(value)) %>%
-  ggplot(aes(x = reorder(region, value), y = value)) + 
+  # arrange(desc(value)) %>%
+  ggplot(aes(x = reorder(zip, loan_total), y = loan_total, fill = majority_race)) + 
   geom_bar(stat = 'identity') + 
-  scale_y_continuous(breaks = seq(0, 300000000, by = 60000000), labels = scales::comma) + 
-  coord_flip() 
+  scale_y_continuous(breaks = seq(0, 8000000000, by = 1800000000), labels = scales::comma) + 
+  coord_flip() + 
+  scale_fill_manual(values=c("aquamarine3", "brown3", "darkgoldenrod2", "darkblue"))  +
+  theme(panel.background = element_blank()) +
+  theme(axis.text.y=element_blank(), #remove x axis labels
+        axis.ticks.y=element_blank()) + 
+  labs(title = "Total Mortgage Loans by Zip Code, 2012-2018", 
+       x = "Chicago Zip Codes", 
+       y = "Total Loans in Dollars", 
+       fill = "Majority Race of Zip Code") 
+dev.off()
 ```
 
-
+Creating dataframe for statstistical analysis by census tract. 
 ```{r}
-chicago_purchases <- clean_names(chicago_purchases)
-
 census_stats <- chicago_purchases %>%
   mutate(loan_amount = as.numeric(loan_amount)) %>%
   group_by(census_tract) %>%
-      #     'Tract Majority Racial/Ethnic Group', 'Tract Population', 'Tract Median Family Income') %>%
-  summarise(value = sum(loan_amount)) %>%
-  arrange(desc(value)) 
-
-tract_demography <- chicago_purchases %>%
-  mutate(year = as.numeric(str_trim(loan_year))) %>%
-  filter(year == 2017 ) %>% 
-  select(geoid10, tract_majority_racial_ethnic_group, tract_population, tract_median_family_income) %>%
-  mutate(value = geoid10, 
-         tract_population = as.numeric(tract_population), 
-         tract_median_family_income = as.numeric(tract_median_family_income)) %>%
-  distinct()
-summary(tract_demography)
+  summarise(loan_total = sum(loan_amount), 
+            white_percent_avg = mean(as.numeric(tract_percent_population_white)), 
+            black_percent_avg = mean(as.numeric(tract_percent_population_black)), 
+            latino_percent_avg = mean(as.numeric(tract_percent_population_latino)), 
+            asian_percent_avg = mean(as.numeric(tract_percent_population_asian)),
+            tract_pop = mean(as.numeric(tract_population)), 
+            med_family_income = mean(as.numeric(tract_median_family_income)), 
+            avg_loan_amount = mean(as.numeric(loan_amount))
+            ) %>%
+  mutate(census_tract = as.character(census_tract), 
+         majority_race = ifelse(white_percent_avg >= 0.5, "white", 
+                         ifelse(black_percent_avg >= 0.5, "black", 
+                         ifelse(latino_percent_avg >= 0.5, "latino", "no_majority")))) %>%
+  arrange(desc(loan_total)) %>%
+  mutate(id = row_number())
+head(census_stats, 3)
 ```
 
-```{r}
-colnames(census_stats) <- c("GEOID10", "values")
-
-census_stats %>%
-  head(60) %>%
-  arrange(desc(value)) %>%
-  ggplot(aes(x = reorder(region, value), y = value)) + 
-  geom_bar(stat = 'identity') + 
-  scale_y_continuous(breaks = seq(0, 300000000, by = 60000000), labels = scales::comma) + 
-  coord_flip() 
-```
-
-```{r}
-# number to majority black neighborhoods 
-census_stats <- census_stats %>%
-  left_join(tract_demography, by="value") 
-```
-
-```{r}
-head(census_stats)
-```
-
-
-```{r}
-census_stats %>%
-  group_by(tract_majority_racial_ethnic_group) %>%
-  summarize(sum = sum(value)) %>%
-  arrange(desc(sum))
-```
-
-```{r}
-table(for_regression$INTERVAL2010)
-table(for_regression$INTERVAL2010)/nrow(for_regression)
-```
-
-
-
-
-```{r}
-quantile(census_stats$values, probs = 0.9945, na.rm = TRUE)
-quantile(census_stats$values, probs = 0.9056, na.rm = TRUE)
-quantile(census_stats$values, probs = 0.39084, na.rm = TRUE)
-census_stats <- census_stats %>%
-  mutate(ranking_2010 = ifelse(values >= 494773563, 1,
-                    ifelse(values >= 192770992, 2, 
-                    ifelse(values >= 21788852, 3, 4))))
-table(for_regression$ranking_2010)
-```
-```{r}
-census_stats <- census_stats %>% mutate(GEOID10 = as.character(GEOID10))
-```
-
+## Creating redlining ranking for 2012-2018 census tracts  
 ```{r}
 nrow(census_stats)
 for_regression <- census_stats %>%
-  left_join(chi_redlining_score, by = "GEOID10") %>%
+  left_join(chi_redlining_score, by = c("census_tract" = "GEOID10")) %>% # adding redlining scores to census tract data
   filter(!is.na(INTERVAL2010)) %>%
-  filter(!is.na(quartile)) %>%
- # mutate(new_column = ifelse(INTERVAL2010 >=3, 1, 0)) %>%
-  mutate(value_2 = ifelse(INTERVAL2010 == 2, 1, 0)) %>%
-  mutate(value_3 = ifelse(INTERVAL2010 == 3, 1, 0)) %>%
-  mutate(value_4 = ifelse(INTERVAL2010 == 4, 1, 0))
-nrow(for_regression)
+  rename(redline_1930_value = INTERVAL2010) %>%  
+  mutate(majority_race = as.factor(majority_race), relevel(majority_race, ref = "no_majority")) %>%
+ mutate(loan_total = ifelse(loan_total <= 535221000, loan_total, 535221000)) %>% # top coding two upper  loan_total values for the South Loop and Fulton Market neighborhoods 
+  mutate(loans_millions = loan_total/1000000) %>%
+  mutate(value_2 = ifelse(redline_1930_value <= 2, 1, 0)) %>% # creating binary variable for 1 or 2 HOLC grad
+  mutate(value_3 = ifelse(redline_1930_value == 3, 1, 0)) %>% # creating binary variable for 3 HOLC grad
+  mutate(value_4 = ifelse(redline_1930_value == 4, 1, 0)) # creating binary variable for 4 HOLC grad
+nrow(for_regression) # number of rows after removing NAs
 ```
+
+## Regression 1: Simple OLS
+```{r}
+for_regression$majority_race <- relevel(for_regression$majority_race, ref = "no_majority")
+
+ols_cont_reg <- lm(loans_millions ~ HRS2010 + tract_pop + med_family_income + avg_loan_amount + majority_race, data = for_regression)
+summary(ols_cont_reg)
+ols_categ_reg <- lm(loans_millions ~ redline_1930_value + tract_pop + med_family_income + avg_loan_amount + majority_race, data = for_regression)
+summary(ols_categ_reg)
+```
+
+## Regression 2: Past category of HOLC grade as predictor for modern recreated distribution 
+
+Creating a new variable showing modern census tracts categorized by the same distribution as the 1930s HOLC grade for chicago. 
+```{r}
+table(for_regression$redline_1930_value) # number of census tracts in each of the four HOLC grades
+table(for_regression$redline_1930_value)/nrow(for_regression) # proportion of tracts in that HOLC grade
+for_regression <- for_regression %>%
+  mutate(ranking_2010 = ifelse(loan_total >= quantile(census_stats$loan_total, 
+                                                      probs = 0.9945, na.rm = TRUE), 1,
+                        ifelse(loan_total >= quantile(census_stats$loan_total, 
+                                                      probs = 0.9056, na.rm = TRUE), 2, 
+                        ifelse(loan_total >= quantile(census_stats$loan_total, 
+                                                      probs = 0.3908, na.rm = TRUE), 3, 4))))
+# creating new categorical variable on 1-4 grading scale for level of home mortgage lending
+```
+
+Table comparing number of census tracts in each of the four HOLC grades. This shows us that the top census tracts by level of 
+```{r}
+table(for_regression$ranking_2010)
+ftable(xtabs(~ redline_1930_value + ranking_2010, data = for_regression))
+```
+
 
 ```{r}
-regression3 <- lm(ranking_2010 ~  value_2 + value_3 + value_4, data=for_regression)
-summary(regression3)
+grade_categ_reg <- lm(ranking_2010 ~ value_3 + value_4, data=for_regression)
+summary(grade_categ_reg)
+grade_cont_reg <- lm(HRS2010 ~ value_3 + value_4, data=for_regression)
+summary(grade_cont_reg)
 ```
 
-
+## Regression 3: Linear Probability Model 
 ```{r}
-ftable(xtabs(~ INTERVAL2010 + ranking_2010, data = for_regression))
+cat_2 <- lm(value_2 ~ redline_1930_value, data = for_regression)
+summary(cat_2)
+cat_3 <- lm(value_3 ~ redline_1930_value, data = for_regression)
+summary(cat_3)
+cat_4 <- lm(value_4 ~ redline_1930_value, data = for_regression)
+summary(cat_4)
+
+cont_2 <- lm(value_2 ~ redline_1930_value, data = for_regression)
+summary(cont_2)
+cont_3 <- lm(value_3 ~ redline_1930_value, data = for_regression)
+summary(cont_3)
+cont_4 <- lm(value_4 ~ redline_1930_value, data = for_regression)
+summary(cont_4)
 ```
 
+
+## Regression 4: Ordered logit 
 ```{r}
-for_regression %>%
-  ggplot(aes(x = ranking_2010, y = HRS2010)) + 
-  geom_point()
+ord_logit_reg <- polr(as.factor(ranking_2010) ~ redline_1930_value, data = for_regression, Hess = TRUE)
+summary(ord_logit_reg)
 ```
 
 
-```{r}
-regression1 <- lm(ranking_2010 ~ INTERVAL2010, data=for_regression)
-summary(regression1)
-```
-```{r}
-regression2 <- polr(as.factor(ranking_2010) ~ INTERVAL2010, data = for_regression, Hess = TRUE)
-summary(regression2)
-```
 https://stats.oarc.ucla.edu/r/dae/ordinal-logistic-regression/
 
+## Regression summaries in stargazer for Latex
 
+```{r mylatextable, results = "asis"}
+stargazer(ols_cont_reg, ols_categ_reg,
+         type = 'latex',
+         omit = 'Constant',
+         header = FALSE,
+         single.row = TRUE, # to put coefficients and standard errors on same line 
+         no.space = TRUE, # to remove the spaces after each line of coefficients 
+         column.sep.width = "3pt", # to reduce column width
+         font.size = "small",
+         column.labels = c("Total home loan amount by Census Tract"),
+         covariate.labels = c("Continous Redline Grade", "Redline Categories", "Tract Population", "Average Family Income", "Average Loan Amount", "Majority Black", "Majority Latino", "Majority White"))
 
-census_stats <- census_stats %>%
-  mutate(region = as.double(region))
+stargazer(grade_cont_reg, grade_categ_reg,
+         type = 'latex',
+         omit = 'Constant',
+         header = FALSE,
+         single.row = TRUE, # to put coefficients and standard errors on same line 
+         no.space = TRUE, # to remove the spaces after each line of coefficients 
+         column.sep.width = "3pt", # to reduce column width
+         font.size = "small",
+         covariate.labels = c("Grade 3", "Grade 4" ))
 
-```{r}
-neighborhood <- c("Near North Side", "Lake View", "Lincoln Park", "West Town", "All majority-Black neighborhoods")
-values <- c(6206203, 6016469, 5258690, 5203987, 4643593)
-chart_data <- tibble(neighborhood, values)
+stargazer(cat_2, cat_3, cat_4, co)
 
-#jpeg(file="majority.jpeg")
-chart_data %>%
-  arrange(desc(values)) %>%
-  ggplot(aes(x = reorder(neighborhood, values), y = values)) +
-  geom_bar(stat = 'identity') + coord_flip()
-#dev.off()
+stargazer(ord_logit_reg,
+         type = 'latex')
 ```
 
-
-
-
-https://rdrr.io/cran/choroplethr/man/tract_choropleth.html 
-
-```{r}
-tract_choropleth(
-  census_stats,
-  state_name = "illinois",
-  title = "help",
-  legend = "no",
-  num_colors = 7
-  ,county_zoom = 17031
-  #,tract_zoom = census_stats$region
-)
-```
-
-```{r}
-nrow(chi_redlining_score)
-chi_red_zip <- chi_redlining_score %>%
-  left_join(census_to_zip, by = "GEOID10")
-nrow(chi_red_zip)
-```
-
-
-```{r}
-zip_stats <- zip_stats %>%
-  filter(region != 60667, region != 60697, region != 60698 )
-```
-
-```{r}
-chicago_zips <- data.frame(list = c(60601, 60602, 60603, 60606, 60604, 60607, 60608, 60609, 60610, 60611, 60612, 60613, 60666, 60616, 60605, 60617, 60618, 60614, 60615, 60623, 60624, 60625, 60626, 60619, 60620, 60639, 60629, 60630, 60632, 60621, 60637, 60622, 60631, 60633, 60636, 60638, 60640, 60641, 60645, 60642, 60643, 60644, 60628, 60646, 60827, 60634, 60659, 60655, 60661, 60656, 60651, 60660, 60707, 60652, 60647, 60654, 60653, 60649, 60657))
-```
-Source: https://data.cityofchicago.org/browse?limitTo=datasets&q=zip+codes&sortBy=relevance
