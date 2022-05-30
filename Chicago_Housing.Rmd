@@ -20,6 +20,8 @@ library(devtools)
 library(sf)
 library(janitor)
 library(MASS)
+library(lmtest)
+library(sandwich)
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
@@ -49,7 +51,7 @@ chicago_purchases <- chicago_purchases %>%
                   -parent_name_panel, -top_holder_name)
 ```
 
-Adding redlining data and zipcodes
+Adding redlining grade and zip codes to purchase origination dataframe.
 ```{r}
 chicago_purchases <- chicago_purchases %>%
   left_join(redlining_score, by = "GEOID10") 
@@ -60,7 +62,7 @@ chic_purchases_w_zip <- chicago_purchases %>%
 
 ## Data visualizations 
 
-Creating dataframe for visualization by zip code
+Creating dataframe for visualization by zip code.
 ```{r}
 zip_stats <- chic_purchases_w_zip %>%
   mutate(loan_amount = as.numeric(loan_amount)) %>%
@@ -96,11 +98,10 @@ choroplethrZip::zip_choropleth(zip_stats_for_map,
 dev.off()
 ```
 
+Bar chart of total home mortgage lending to Chicago zip codes, color coding for majority race of neighborhood. 
 ```{r}
 jpeg(file="zip_code_by_race.jpeg")
 zip_stats %>%
- # tail(40) %>%
-  # arrange(desc(value)) %>%
   ggplot(aes(x = reorder(zip, loan_total), y = loan_total, fill = majority_race)) + 
   geom_bar(stat = 'identity') + 
   scale_y_continuous(breaks = seq(0, 8000000000, by = 1800000000), labels = scales::comma) + 
@@ -116,7 +117,7 @@ zip_stats %>%
 dev.off()
 ```
 
-Creating dataframe for statstistical analysis by census tract. 
+Creating dataframe of modern home mortgage lending by census tract used for statistical analysis. 
 ```{r}
 census_stats <- chicago_purchases %>%
   mutate(loan_amount = as.numeric(loan_amount)) %>%
@@ -139,7 +140,7 @@ census_stats <- chicago_purchases %>%
 head(census_stats, 3)
 ```
 
-## Creating redlining ranking for 2012-2018 census tracts  
+Creating dataframe including redlining scores by census tract for statistical analysis. 
 ```{r}
 nrow(census_stats)
 for_regression <- census_stats %>%
@@ -147,7 +148,7 @@ for_regression <- census_stats %>%
   filter(!is.na(INTERVAL2010)) %>%
   rename(redline_1930_value = INTERVAL2010) %>%  
   mutate(majority_race = as.factor(majority_race), relevel(majority_race, ref = "no_majority")) %>%
- mutate(loan_total = ifelse(loan_total <= 535221000, loan_total, 535221000)) %>% # top coding two upper  loan_total values for the South Loop and Fulton Market neighborhoods 
+  mutate(loan_total = ifelse(loan_total <= 535221000, loan_total, 535221000)) %>% # top coding two upper  loan_total values for the South Loop and Fulton Market neighborhoods 
   mutate(loans_millions = loan_total/1000000) %>%
   mutate(value_2 = ifelse(redline_1930_value <= 2, 1, 0)) %>% # creating binary variable for 1 or 2 HOLC grad
   mutate(value_3 = ifelse(redline_1930_value == 3, 1, 0)) %>% # creating binary variable for 3 HOLC grad
@@ -157,7 +158,7 @@ nrow(for_regression) # number of rows after removing NAs
 
 ## Regression 1: Simple OLS
 ```{r}
-for_regression$majority_race <- relevel(for_regression$majority_race, ref = "no_majority")
+for_regression$majority_race <- relevel(for_regression$majority_race, ref = "no_majority") # setting no majority racial group as the baseline category to compare findings for majority White, Black, and Latino neighborhoods 
 
 ols_cont_reg <- lm(loans_millions ~ HRS2010 + tract_pop + med_family_income + avg_loan_amount + majority_race, data = for_regression)
 summary(ols_cont_reg)
@@ -191,40 +192,37 @@ ftable(xtabs(~ redline_1930_value + ranking_2010, data = for_regression))
 ```{r}
 grade_categ_reg <- lm(ranking_2010 ~ value_3 + value_4, data=for_regression)
 summary(grade_categ_reg)
-grade_cont_reg <- lm(HRS2010 ~ value_3 + value_4, data=for_regression)
+grade_cont_reg <- lm(ranking_2010 ~ HRS2010, data=for_regression)
 summary(grade_cont_reg)
 ```
 
 ## Regression 3: Linear Probability Model 
 ```{r}
 cat_2 <- lm(value_2 ~ redline_1930_value, data = for_regression)
-summary(cat_2)
+coeftest(cat_2, vcov = vcovHC(cat_2, type="HC1"))
 cat_3 <- lm(value_3 ~ redline_1930_value, data = for_regression)
-summary(cat_3)
+coeftest(cat_3, vcov = vcovHC(cat_3, type="HC1"))
 cat_4 <- lm(value_4 ~ redline_1930_value, data = for_regression)
-summary(cat_4)
+coeftest(cat_4, vcov = vcovHC(cat_4, type="HC1"))
 
 cont_2 <- lm(value_2 ~ redline_1930_value, data = for_regression)
-summary(cont_2)
+coeftest(cont_2, vcov = vcovHC(cont_2, type="HC1"))
 cont_3 <- lm(value_3 ~ redline_1930_value, data = for_regression)
-summary(cont_3)
+coeftest(cont_3, vcov = vcovHC(cont_3, type="HC1"))
 cont_4 <- lm(value_4 ~ redline_1930_value, data = for_regression)
-summary(cont_4)
+coeftest(cont_4, vcov = vcovHC(cont_4, type="HC1"))
 ```
-
 
 ## Regression 4: Ordered logit 
 ```{r}
 ord_logit_reg <- polr(as.factor(ranking_2010) ~ redline_1930_value, data = for_regression, Hess = TRUE)
 summary(ord_logit_reg)
 ```
-
-
-https://stats.oarc.ucla.edu/r/dae/ordinal-logistic-regression/
+Source: https://stats.oarc.ucla.edu/r/dae/ordinal-logistic-regression/
 
 ## Regression summaries in stargazer for Latex
-
 ```{r mylatextable, results = "asis"}
+# Regression 1 - OLS
 stargazer(ols_cont_reg, ols_categ_reg,
          type = 'latex',
          omit = 'Constant',
@@ -233,21 +231,22 @@ stargazer(ols_cont_reg, ols_categ_reg,
          no.space = TRUE, # to remove the spaces after each line of coefficients 
          column.sep.width = "3pt", # to reduce column width
          font.size = "small",
-         column.labels = c("Total home loan amount by Census Tract"),
+         column.labels = c("Continous Redline Grade", "Categorical Redline Grade"),
          covariate.labels = c("Continous Redline Grade", "Redline Categories", "Tract Population", "Average Family Income", "Average Loan Amount", "Majority Black", "Majority Latino", "Majority White"))
 
+# Regression 2 - HOLC grades 
 stargazer(grade_cont_reg, grade_categ_reg,
          type = 'latex',
          omit = 'Constant',
          header = FALSE,
          single.row = TRUE, # to put coefficients and standard errors on same line 
          no.space = TRUE, # to remove the spaces after each line of coefficients 
+         dep.var.labels = c("Modern Lending Ranking"),
          column.sep.width = "3pt", # to reduce column width
          font.size = "small",
-         covariate.labels = c("Grade 3", "Grade 4" ))
+         covariate.labels = c("Continous Variable", "Grade 3", "Grade 4"))
 
-stargazer(cat_2, cat_3, cat_4, co)
-
+# Regression 4 - ordered logit 
 stargazer(ord_logit_reg,
          type = 'latex')
 ```

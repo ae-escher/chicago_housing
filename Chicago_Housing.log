@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022) (preloaded format=pdflatex 2022.5.27)  28 MAY 2022 22:41
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022) (preloaded format=pdflatex 2022.5.27)  29 MAY 2022 23:17
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -318,6 +318,9 @@ File: l3backend-pdftex.def 2022-04-20 L3 backend support: PDF output (pdfTeX)
 
 LaTeX Warning: Label `' multiply defined.
 
+
+LaTeX Warning: Label `' multiply defined.
+
 )
 \openout1 = `Chicago_Housing.aux'.
 
@@ -419,35 +422,35 @@ LaTeX Font Info:    Trying to load font information for T1+lmtt on input line 11
 File: t1lmtt.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 ) [1
 
-{/Users/anneliseescher/Library/TinyTeX/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] [2]
+{/Users/anneliseescher/Library/TinyTeX/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] [2] [3] [4] [5]
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <9> on input line 247.
+(Font)              <10> on input line 433.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <5> on input line 247.
+(Font)              <7> on input line 433.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <10> on input line 283.
+(Font)              <5> on input line 433.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <7> on input line 283.
-[3] [4] (./Chicago_Housing.aux)
+(Font)              <9> on input line 443.
+[6] [7] (./Chicago_Housing.aux)
 
 LaTeX Warning: There were multiply-defined labels.
 
 Package rerunfilecheck Info: File `Chicago_Housing.out' has not changed.
-(rerunfilecheck)             Checksum: BA54ED9A8C78AED665FE4E83D80F59A8;1365.
+(rerunfilecheck)             Checksum: 77BC782668B61427B40D0A4FBAE112CE;1802.
  ) 
 Here is how much of TeX's memory you used:
- 11018 strings out of 480260
- 173899 string characters out of 5892930
- 469074 words of memory out of 5000000
- 28744 multiletter control sequences out of 15000+600000
+ 11030 strings out of 480260
+ 174098 string characters out of 5892930
+ 471185 words of memory out of 5000000
+ 28748 multiletter control sequences out of 15000+600000
  521408 words of font info for 72 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  72i,10n,77p,571b,468s stack positions out of 10000i,1000n,20000p,200000b,200000s
 {/Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{/Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}{/Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}{/Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}</Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi9.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr17.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr6.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr9.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmri10.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmri9.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy6.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy7.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy9.pfb></Users/anneliseescher/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmtt10.pfb>
-Output written on Chicago_Housing.pdf (4 pages, 240160 bytes).
+Output written on Chicago_Housing.pdf (7 pages, 244822 bytes).
 PDF statistics:
- 131 PDF objects out of 1000 (max. 8388607)
- 96 compressed objects within 1 object stream
- 17 named destinations out of 1000 (max. 500000)
- 41 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 159 PDF objects out of 1000 (max. 8388607)
+ 120 compressed objects within 2 object streams
+ 25 named destinations out of 1000 (max. 500000)
+ 57 words of extra memory for PDF output out of 10000 (max. 10000000)
 
